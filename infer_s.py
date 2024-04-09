@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow.keras.utils import get_custom_objects
 import pickle
 from datetime import datetime
+import time
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
@@ -93,14 +94,16 @@ except:                   # 如果 try 的內容發生錯誤，就執行 except 
     print('模型不存在 \n盲選')
 
 
-#預測獎號
 # 獲取指定日期前一期的日期
 def get_previous_date(date, lottery_data):    
     previous_date = None
     try:
-        index = np.where(lottery_data['日期'] == date)[0][0]
-        if index > 0:
-            previous_date = lottery_data[['日期']].iloc[index - 1].values
+        if date.strip() == "":
+            previous_date = lottery_data['日期'].iloc[1]            
+        else:
+            index = np.where(lottery_data['日期'] == date)[0][0]
+            if index > 0:
+                previous_date = lottery_data['日期'].iloc[index - 1]
     except IndexError:        
         # 異常發生時不做任何動作，直接跳過
         pass
@@ -110,15 +113,18 @@ def get_previous_date(date, lottery_data):
 def get_previous_numbers(date, lottery_data):    
     previous_numbers = None
     try:
-        index = np.where(lottery_data['日期'] == date)[0][0]
-        if index > 0:
-            previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[index - 1].values
+        if date.strip() == "":
+            previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[1].values
+        else:
+            index = np.where(lottery_data['日期'] == date)[0][0]
+            if index > 0:
+                previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[index - 1].values
     except IndexError:
         # 異常發生時不做任何動作，直接跳過
         pass
     return previous_numbers
 
-# 獲取指定日期前一期或最後一期的開獎號碼
+# 指定日期
 specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
 
 # 獲取指定日期前一期或最後一期的開獎號碼
@@ -144,6 +150,9 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
         
         # 寫入資料行
         writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers})
+
+# 記錄開始時間
+start_time = time.time()       
 
 # 預測函數
 def predict_next_numbers(model, features, drawings, window_size, top_n):
@@ -191,7 +200,13 @@ def predict_next_numbers(model, features, drawings, window_size, top_n):
 
 # 獲取開始日期在資料中的索引
 start_date = specified_date
-start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
+if start_date.strip() == "":
+    start_date_index = 1 
+    print("未指定開始日期，將從第二筆資料開始。")
+else:
+    start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
+
+draws_predicted = len(date) - start_date_index + 1
 
 # 調用預測函數 
 if start_date_index is None:
@@ -217,6 +232,19 @@ else:
        predict_next_numbers(model, features, drawings, window_size, top_n=10)     
 
 if start_date_index is not None:
-    print("總預測期數 = ", len(date) - start_date_index + 1) # 總預測期數
+    print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
+else:
+    print("未找到指定日期，無法進行預測。")
 
 print("結果已保存至 infer_s_result.csv")
+
+# 記錄結束時間
+end_time = time.time()
+
+# 計算執行時間
+elapsed_time = end_time - start_time
+
+# 格式化時間輸出
+elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
+
+print(f"代碼執行完成，總耗時: {elapsed_formatted}")
