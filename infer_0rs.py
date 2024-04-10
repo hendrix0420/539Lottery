@@ -183,7 +183,7 @@ def get_previous_date(date, lottery_data):
             if index > 0:
                 previous_date = lottery_data['日期'].iloc[index - 1]
     except IndexError:        
-        # 異常發生時不做任何動作，直接跳過
+        # 異常發生時不做任何動作，直接跳過        
         pass
     return previous_date
 
@@ -239,7 +239,11 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
         writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers})
 
 # 記錄開始時間
-start_time = time.time()        
+start_time = time.time()   
+     
+# 總預測期數
+if start_date_index is not None:
+    draws_predicted = len(date) - start_date_index + 1
         
 # 循環直到資料底端
 while start_date_index is not None and start_date_index < len(date):
@@ -449,7 +453,7 @@ while start_date_index is not None and start_date_index < len(date):
     start_date_index += 1
 
 if start_date_index is not None:
-    print("已達到資料底端，總預測期數 = ", len(date) - start_date_index + 1) # 總預測期數
+    print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
 else:
     print("未找到指定日期，無法進行預測。")
     

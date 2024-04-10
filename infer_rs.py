@@ -285,7 +285,9 @@ if start_date.strip() == "":
 else:
     start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
 
-draws_predicted = len(date) - start_date_index + 1
+# 總預測期數
+if start_date_index is not None:
+    draws_predicted = len(date) - start_date_index + 1
 
 # 調用預測函數 
 if start_date_index is None:
@@ -312,8 +314,6 @@ else:
 
 if start_date_index is not None:
     print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
-else:
-    print("未找到指定日期，無法進行預測。")
     
 print("結果已保存至 infer_rs_result.csv")
 

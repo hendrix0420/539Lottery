@@ -163,6 +163,10 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
 # 記錄開始時間
 start_time = time.time()       
 
+# 總預測期數
+if start_date_index is not None:
+    draws_predicted = len(date) - start_date_index + 1
+    
 # 循環直到資料底端
 while start_date_index is not None and start_date_index < len(date):      
     # 創建特徵
@@ -290,7 +294,7 @@ while start_date_index is not None and start_date_index < len(date):
     start_date_index += 1         
     
 if start_date_index is not None:
-    print("已達到資料底端，總預測期數 = ", len(date) - start_date_index + 1) # 總預測期數
+    print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
 else:
     print("未找到指定日期，無法進行預測。")
 
