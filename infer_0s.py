@@ -139,7 +139,6 @@ if start_date.strip() == "":
 else:
     start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
 
-draws_predicted = len(date) - start_date_index + 1
 
 # 打開 CSV 檔案以寫入模式
 # 如果檔案已經存在，先將其清空
@@ -290,9 +289,8 @@ while start_date_index is not None and start_date_index < len(date):
     # 更新起始日期索引
     start_date_index += 1         
     
-
 if start_date_index is not None:
-    print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
+    print("已達到資料底端，總預測期數 = ", len(date) - start_date_index + 1) # 總預測期數
 else:
     print("未找到指定日期，無法進行預測。")
 
