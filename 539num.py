@@ -27,12 +27,7 @@ while True:
         print([date_str] + nums)
 
     # 如果找到的開獎號碼數量少於30筆,則認為是最後一頁
-    if len(draw_dates) < 30 or len(draw_numbers) < 150:
-        # 遍歷最後一頁的開獎號碼資料
-        for date, num1, num2, num3, num4, num5 in zip(draw_dates, draw_numbers[::5], draw_numbers[1::5], draw_numbers[2::5], draw_numbers[3::5], draw_numbers[4::5]):
-            date_str = date.text.strip()
-            nums = [num1.text, num2.text, num3.text, num4.text, num5.text]
-            data.append([date_str] + nums)            
+    if len(draw_dates) < 30 or len(draw_numbers) < 150:       
         break
 
     # 更新網址以獲取下一頁

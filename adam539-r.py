@@ -9,6 +9,7 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.utils import get_custom_objects
 import pickle
+import time
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
@@ -170,6 +171,9 @@ except Exception as e:
 
 epo = int(input('輸入訓練迭代次數: '))
 
+# 記錄開始時間
+start_time = time.time()   
+
 # 編譯模型
 model.compile(optimizer='adam', loss=combined_loss_with_regularization, metrics=['accuracy'])
 
@@ -207,6 +211,17 @@ model_json = model.to_json()
 with open('model_architecture-r.json', 'w') as json_file:
     json_file.write(model_json)
 print(f"模型架構已保存至 model_architecture-r.json")
+
+# 記錄結束時間
+end_time = time.time()
+
+# 計算執行時間
+elapsed_time = end_time - start_time
+
+# 格式化時間輸出
+elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
+
+print(f"代碼執行完成，總耗時: {elapsed_formatted}")
 
 #預測獎號
 # 獲取最後一期開獎號碼

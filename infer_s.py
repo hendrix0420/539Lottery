@@ -152,7 +152,10 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
         writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers})
 
 # 記錄開始時間
-start_time = time.time()       
+start_time = time.time()  
+     
+# 預測號碼數量
+top_n = int(input('預測號碼數量： '))
 
 # 預測函數
 def predict_next_numbers(model, features, drawings, window_size, top_n):
@@ -231,7 +234,7 @@ else:
        last_vector = to_vector(previous_numbers)      
        # print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
        print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
-       predict_next_numbers(model, features, drawings, window_size, top_n=10)     
+       predict_next_numbers(model, features, drawings, window_size, top_n)     
 
 if start_date_index is not None:
     print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數

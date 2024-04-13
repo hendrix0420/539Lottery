@@ -233,6 +233,9 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
 # 記錄開始時間
 start_time = time.time()       
 
+# 預測號碼數量
+top_n = int(input('預測號碼數量： '))
+
 # 預測函數
 def predict_next_numbers(model, features, drawings, window_size, top_n):
     # 構造預測輸入特徵向量
@@ -310,7 +313,7 @@ else:
         specified_date_numbers = drawings[i]
         # print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
         print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
-        predict_next_numbers(model, features, drawings, window_size, top_n=10)   
+        predict_next_numbers(model, features, drawings, window_size, top_n)   
 
 if start_date_index is not None:
     print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數

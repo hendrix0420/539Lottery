@@ -227,6 +227,9 @@ start_time = time.time()
 # 總預測期數
 if start_date_index is not None:
     draws_predicted = len(date) - start_date_index + 1
+
+# 預測號碼數量
+top_n = int(input('預測號碼數量： '))
     
 # 循環直到資料底端
 while start_date_index is not None and start_date_index < len(date): 
@@ -400,7 +403,7 @@ while start_date_index is not None and start_date_index < len(date):
     specified_date_numbers = drawings[start_date_index]   
     print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
     print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
-    top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n=10)   
+    top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n)   
 
     # 進行對獎
     if specified_date_numbers is not None:

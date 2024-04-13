@@ -10,6 +10,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.utils import get_custom_objects
 import pickle
+import time
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
@@ -151,10 +152,11 @@ except:                   # 如果 try 的內容發生錯誤，就執行 except 
     epoc = 0
     print('從新訓練模型')
 
-
-
 # 訓練模型
 epo = int(input('輸入訓練迭代次數: '))
+
+# 記錄開始時間
+start_time = time.time()   
 
 # 0.定義損失函數
 def custom_loss(y_true, y_pred):
@@ -240,6 +242,17 @@ custom_objects_path = 'custom_objects-c.pkl'
 with open(custom_objects_path, 'wb') as file:
     pickle.dump(get_custom_objects(), file)
 print(f"自定義對象已保存至 {custom_objects_path}")
+
+# 記錄結束時間
+end_time = time.time()
+
+# 計算執行時間
+elapsed_time = end_time - start_time
+
+# 格式化時間輸出
+elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
+
+print(f"代碼執行完成，總耗時: {elapsed_formatted}")
 
 #預測獎號
 # 獲取最後一期開獎號碼
