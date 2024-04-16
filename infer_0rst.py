@@ -160,7 +160,7 @@ input_shape = (X_train.shape[1],)
 # 加載模型權重
 epoc = int(input(f'載入模型步數: '))
 try:
-    model_weights_path = f'my_lottery_model-R_{epoc}.weights.h5'
+    model_weights_path = f'my_lottery_model-rt_{epoc}.weights.h5'
     
     # 創建新的模型實例
     model = LotteryModel(input_shape)
@@ -222,13 +222,13 @@ else:
 
 # 打開 CSV 檔案以寫入模式
 # 如果檔案已經存在，先將其清空
-if os.path.exists('infer_0rs_results.csv'):
-    with open('infer_0rs_results.csv', 'w', newline='', encoding='utf-8-sig') as f:
+if os.path.exists('infer_0rst_results.csv'):
+    with open('infer_0rst_results.csv', 'w', newline='', encoding='utf-8-sig') as f:
         f.truncate()
 
 # 開啟 CSV 檔案以附加模式
 def save_csv(specified_date, specified_date_numbers, top_numbers, matched_numbers):    
-    with open('infer_0rs_results.csv', 'a', newline='', encoding='utf-8-sig') as csvfile:
+    with open('infer_0rst_results.csv', 'a', newline='', encoding='utf-8-sig') as csvfile:
         # 定義 CSV 欄位名稱
         fieldnames = ['對獎日期', '開獎號碼', '預測開獎號碼範圍', '對中的號碼數量', '對中的號碼']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)  
@@ -464,7 +464,7 @@ if start_date_index is not None:
 else:
     print("未找到指定日期，無法進行預測。")
     
-print("結果已保存至 infer_0rs_result.csv")
+print("結果已保存至 infer_0rst_result.csv")
 
 # 記錄結束時間
 end_time = time.time()
