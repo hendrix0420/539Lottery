@@ -82,26 +82,27 @@ print("上一期开奖号码: ", last_numbers)
 window_size = 10  # 与训练时使用的 window_size 值相同
 
 def predict_next_numbers(model, features, drawings, window_size):
-      
-    # 构造预测输入特征向量
+    # 構造預測輸入特徵向量
     last_feature = features[-1]
     windowed_features = features[-window_size:]
     windowed_feature = np.mean(windowed_features, axis=0)
     input_features = np.concatenate((last_feature, windowed_feature, last_vector))
-    
-    # 打印预测输入特征向量的形状和值
+
+    # 打印預測輸入特徵向量的形狀和值
     print("Last_feature: ", len(last_feature), ", Windowed_feature: ", len(windowed_feature), ", Last Vector: ", len(last_vector))
-    print("预测输入特征向量形状:", input_features.shape)
-    print("预测输入特征向量值:\n", input_features)
-    
+    print("預測輸入特徵向量形狀:", input_features.shape)
+    print("預測輸入特徵向量值:\n", input_features)
 
-    # 预测下一期开奖号码
+    # 預測下一期開獎號碼的概率分佈
     predicted_probs = model.predict(np.array([input_features]))[0]
-    predicted_numbers = [i+1 for i, prob in enumerate(predicted_probs) if prob > 0.5]
-    predicted_numbers = [num for num in predicted_numbers if 1 <= num <= 39]
+    
+    # 從概率分佈中選擇最大的5個概率對應的號碼
+    top_indices = np.argsort(predicted_probs).flatten()[-5:][::-1] + 1
+    predicted_numbers = [num for num in top_indices if 1 <= num <= 39]
 
-    # 输出预测结果
-    print(f"预测下一期539开奖号码为: {predicted_numbers}")
+    # 輸出預測結果
+    print(f"預測下一期539開獎號碼為: {predicted_numbers}")
+
 
 # 调用预测函数
 predict_next_numbers(model, features, drawings, window_size)

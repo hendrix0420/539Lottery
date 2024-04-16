@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import csv
+import os
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
 from keras.layers import Input, Dense, Reshape, Activation
@@ -10,6 +12,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.utils import get_custom_objects
 import pickle
+from datetime import datetime
 import time
 
 # 載入歷史彩票開獎號碼數據
@@ -106,11 +109,11 @@ X = np.concatenate((features, windowed_features, single_draw_features, consecuti
 # 5. 標記樣本為1個時間視窗後的中獎號碼
 y = drawings[window_size:]
 
-# 將標簽編碼為一個熱向量
-y = np.array([to_categorical(label-1, num_classes=39) for label in y])
+# 将标签编码为一个热向量
+y = np.array([to_categorical(label-1, num_classes=40) for label in y])
 
-# 重塑標簽形狀為 (samples, 5, 39)
-y = y.reshape(y.shape[0], 5, 39)
+# 重塑标签形状为 (samples, 5, 40)
+y = y.reshape(y.shape[0], 5, 40)
 
 # 切分訓練/測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -130,154 +133,89 @@ model = Sequential([
     Input(shape=(X_train.shape[1],)),  # 添加Input層
     Dense(128, activation='relu'),
     Dense(64, activation='relu'),
-    Dense(5 * 39, activation=custom_activation),
-    Reshape((5, 39)),
-    Activation('softmax')  # 使用softmax激活函數
+    Dense(5 * 40, activation='relu'),
+    Reshape((5, 40)),  # 将输出重塑为 (5, 40) 的形状
+    Dense(40, activation='softmax')  # 输出维度为39,每个号码是一个39分类问题
 ])
 
 # 加載模型權重
 epoc = int(input(f'載入模型步數: '))
 try:                      # 使用 try，測試內容是否正確
-    model_weights_path = f'my_lottery_model-C_{epoc}.weights.h5'
+    model_weights_path = f'my_lottery_model-ct_{epoc}.weights.h5'
     new_model = Sequential.from_config(model.get_config())
     new_model.load_weights(model_weights_path)
     print(f"模型權重 {model_weights_path} 已加載")
     # 加載自定義對象
-    custom_objects_path = 'custom_objects-c.pkl'
+    custom_objects_path = 'custom_objects-ct.pkl'
     with open(custom_objects_path, 'rb') as file:
        custom_objects = pickle.load(file)
     new_model.make_predict_function(custom_objects)  # 重新編譯模型並加載自定義對象
     print(f"自定義對象從 {custom_objects_path} 已加載")
 except:                   # 如果 try 的內容發生錯誤，就執行 except 裡的內容
-    epoc = 0
-    print('從新訓練模型')
+    print('模型不存在 \n盲選')
 
-# 訓練模型
-epo = int(input('輸入訓練週期數: '))
+
+# 獲取指定日期前一期的日期
+def get_previous_date(date, lottery_data):    
+    previous_date = None
+    try:
+        if date.strip() == "":
+            previous_date = lottery_data['日期'].iloc[1]            
+        else:
+            index = np.where(lottery_data['日期'] == date)[0][0]
+            if index > 0:
+                previous_date = lottery_data['日期'].iloc[index - 1]
+    except IndexError:        
+        # 異常發生時不做任何動作，直接跳過
+        pass
+    return previous_date
+
+# 獲取指定日期前一期的開獎號碼
+def get_previous_numbers(date, lottery_data):    
+    previous_numbers = None
+    try:
+        if date.strip() == "":
+            previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[1].values
+        else:
+            index = np.where(lottery_data['日期'] == date)[0][0]
+            if index > 0:
+                previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[index - 1].values
+    except IndexError:
+        # 異常發生時不做任何動作，直接跳過
+        pass
+    return previous_numbers
+
+# 獲取指定日期前一期或最後一期的開獎號碼
+specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
+
+# 獲取指定日期前一期或最後一期的開獎號碼
+previous_date = get_previous_date(specified_date, lottery_data)
+previous_numbers = get_previous_numbers(specified_date, lottery_data)
+
+# 打開 CSV 檔案以寫入模式
+# 如果檔案已經存在，先將其清空
+if os.path.exists('infer_cst_results.csv'):
+    with open('infer_cst_results.csv', 'w', newline='', encoding='utf-8-sig') as f:
+        f.truncate()
+
+# 開啟 CSV 檔案以附加模式
+def save_csv(specified_date, specified_date_numbers, top_numbers, matched_numbers):    
+    with open('infer_cst_results.csv', 'a', newline='', encoding='utf-8-sig') as csvfile:
+        # 定義 CSV 欄位名稱
+        fieldnames = ['對獎日期', '開獎號碼', '預測開獎號碼範圍', '對中的號碼數量', '對中的號碼']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)  
+        
+        # 如果檔案是新建立的，則寫入標題行
+        if csvfile.tell() == 0:
+            writer.writeheader()  
+        
+        # 寫入資料行
+        writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers})
 
 # 記錄開始時間
-start_time = time.time()   
+start_time = time.time()
 
-# 0.定義損失函數
-def custom_loss(y_true, y_pred):
-    # 計算每個樣本的交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    return tf.reduce_mean(cross_entropy)  # 返回批次中所有樣本損失的平均值
-
-
-# 1.將評估指標納入損失函數
-def combined_loss(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 組合損失函數,以0.5的權重平衡交叉熵損失和準確率
-    combined_loss = 0.5 * cross_entropy - 0.5 * accuracy
-    
-    return combined_loss
-
-# 2.使用正則化項
-def combined_loss_with_regularization(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 組合損失函數,以0.5的權重平衡交叉熵損失和準確率
-    combined_loss = 0.5 * cross_entropy - 0.5 * accuracy
-    
-    # 添加L2正則化項
-    reg_loss = tf.reduce_sum(model.losses)
-    
-    return combined_loss + reg_loss
-
-# 3.動態調整損失函數和評估指標權重
-def dynamic_loss(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 獲取當前訓練步數
-    iterations = tf.keras.backend.get_value(model.optimizer.iterations)
-    
-    # 計算當前epoch
-    epoch = iterations // steps_per_epoch
-    
-    # 動態調整權重
-    loss_weight = tf.maximum(0.8 - 0.005 * tf.cast(epoch, tf.float32), 0.2)
-    acc_weight = 1.0 - loss_weight
-    
-    # 組合損失函數
-    combined_loss = loss_weight * cross_entropy - acc_weight * accuracy
-    
-    return combined_loss
-    
-steps_per_epoch = len(lottery_data) // 32
-
-# 編譯模型
-model.compile(optimizer='adam', loss=combined_loss, metrics=['accuracy'])
-
-# 訓練模型
-history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))
-
-# 保存模型權重
-ep = epoc + epo
-model_weights_path = f'my_lottery_model-C_{ep}.weights.h5'
-model.save_weights(model_weights_path)
-print(f"Epoch: {epo} \n模型權重已保存至 {model_weights_path}")
-
-# 獲取訓練過程中的損失值和準確率
-train_loss = history.history['loss']
-val_loss = history.history['val_loss']
-train_acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
-
-# 找出最低驗證集損失值和最高驗證集準確率對應的週期數
-min_val_loss_epoch = np.argmin(val_loss) + 1
-max_val_acc_epoch = np.argmax(val_acc) + 1
-
-# 列印結果
-print(f'最低驗證集損失值: {np.min(val_loss):.4f}, 出現在第 {min_val_loss_epoch} 個週期')
-print(f'最高驗證集準確率: {np.max(val_acc):.4f}, 出現在第 {max_val_acc_epoch} 個週期')
-
-# 保存自定義對象
-custom_objects_path = 'custom_objects-c.pkl'
-with open(custom_objects_path, 'wb') as file:
-    pickle.dump(get_custom_objects(), file)
-print(f"自定義對象已保存至 {custom_objects_path}")
-
-# 記錄結束時間
-end_time = time.time()
-
-# 計算執行時間
-elapsed_time = end_time - start_time
-
-# 格式化時間輸出
-elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
-
-print(f"代碼執行完成，總耗時: {elapsed_formatted}")
-
-#預測獎號
-# 獲取最後一期開獎號碼
-last_numbers = drawings[-1]
-
-# 將最後一期開獎號碼轉換為向量形式
-def to_vector(numbers):
-    vector = np.zeros(5)
-    for i, num in enumerate(numbers):
-        if 1 <= num <= 39:
-            vector[i] = 1
-    return vector
-
-# 將最後一期開獎號碼向量化，使其長度為5
-last_vector = to_vector(last_numbers)
-print("上一期開獎號碼: ", dd[-1])
-
+# 預測函數
 def predict_next_numbers(model, features, drawings, window_size, top_n):
     last_feature = features[-1]  # 最後一期的特徵
     windowed_features = features[-window_size:]  # 視窗特徵
@@ -308,7 +246,79 @@ def predict_next_numbers(model, features, drawings, window_size, top_n):
     top_numbers = [i+1 for i in sorted_indices[:top_n]]
     
     # 輸出預測的號碼範圍
-    print(f"預測下一期539開獎號碼範圍為: {top_numbers}")
+    print(f"預測本期539開獎號碼範圍為: {top_numbers}")
+    
+    # 比對指定日期的開獎號碼
+    specified_date_numbers = None
+    if specified_date in date:
+        index = np.where(date == specified_date)[0][0]
+        specified_date_numbers = drawings[index]        
+    
+    # 進行對獎
+    if specified_date_numbers is not None:
+        matched_numbers = set(top_numbers).intersection(set(specified_date_numbers))
+        print(f"預測號碼與指定日期開獎號碼對中的號碼數量為: {len(matched_numbers)}")
+        if(len(matched_numbers)!=0):
+          print(f"對中的號碼為: {matched_numbers}\n------------------------------------------------------") 
+        else:
+          print("未對中任何號碼\n------------------------------------------------------")
 
-# 調用預測函數
-predict_next_numbers(model, features, drawings, window_size, top_n=10)
+    # 保存至 infers_results.csv 檔案中
+    if len(matched_numbers) != 0:
+          save_csv(specified_date, specified_date_numbers, top_numbers, matched_numbers)
+    else:
+          save_csv(specified_date, specified_date_numbers, top_numbers, "")
+
+# 獲取開始日期在資料中的索引
+start_date = specified_date
+if start_date.strip() == "":
+    start_date_index = 1 
+    print("未指定開始日期，將從第二筆資料開始。")
+else:
+    start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
+
+# 總預測期數
+if start_date_index is not None:
+    draws_predicted = len(date) - start_date_index + 1
+
+# 預測號碼數量
+top_n = int(input('預測號碼數量： '))
+
+# 調用預測函數 
+if start_date_index is None:
+    print(f"找不到指定日期 {start_date} 的開獎號碼或資料錯誤，將不對獎。")
+else:
+    for i in range(start_date_index, len(date)):    
+       # 將最後一期開獎號碼轉換為向量形式
+       def to_vector(numbers):
+           vector = np.zeros(5)
+           for i, num in enumerate(numbers):
+               if 1 <= num <= 39:
+                   vector[i] = 1
+           return vector
+
+       # 將前一期開獎號碼向量化，使其長度為5
+       last_vector = to_vector(previous_numbers)
+       p_date = date[i-1]
+       p_date_numbers = drawings[i-1]
+       specified_date = date[i]
+       specified_date_numbers = drawings[i]
+       # print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
+       print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
+       predict_next_numbers(model, features, drawings, window_size, top_n)   
+
+if start_date_index is not None:
+    print("已達到資料底端，總預測期數 = ", draws_predicted) # 總預測期數
+
+print("結果已保存至 infer_cst_result.csv")
+
+# 記錄結束時間
+end_time = time.time()
+
+# 計算執行時間
+elapsed_time = end_time - start_time
+
+# 格式化時間輸出
+elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
+
+print(f"代碼執行完成，總耗時: {elapsed_formatted}")

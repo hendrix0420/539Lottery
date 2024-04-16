@@ -95,21 +95,29 @@ def combined_loss_with_regularization(y_true, y_pred):
     return combined_loss + reg_loss
 
 # 3.動態調整損失函數和評估指標權重
-def dynamic_loss(y_true, y_pred, epoch):
+def dynamic_loss(y_true, y_pred):
     # 計算交叉熵損失
     cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
     
     # 計算準確率
     accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
     
+    # 獲取當前訓練步數
+    iterations = tf.keras.backend.get_value(model.optimizer.iterations)
+    
+    # 計算當前epoch
+    epoch = iterations // steps_per_epoch
+    
     # 動態調整權重
-    loss_weight = max(0.8 - 0.005 * epoch, 0.2)
-    acc_weight = 1 - loss_weight
+    loss_weight = tf.maximum(0.8 - 0.005 * tf.cast(epoch, tf.float32), 0.2)
+    acc_weight = 1.0 - loss_weight
     
     # 組合損失函數
     combined_loss = loss_weight * cross_entropy - acc_weight * accuracy
     
     return combined_loss
+    
+steps_per_epoch = len(lottery_data) // 32
 
 # 定義自定義激活函數
 def custom_activation(x):
@@ -169,7 +177,7 @@ except Exception as e:
     epoc = 0
     model = LotteryModel(input_shape)  # 創建新的模型實例  
 
-epo = int(input('輸入訓練迭代次數: '))
+epo = int(input('輸入訓練週期數: '))
 
 # 記錄開始時間
 start_time = time.time()   

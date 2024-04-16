@@ -6,8 +6,7 @@ from keras.layers import Input, Dense, Reshape, Activation
 from tensorflow.keras.utils import to_categorical
 import tensorflow.keras.backend as K
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
+import tensorflow.keras as keras
 from tensorflow.keras.utils import get_custom_objects
 import pickle
 import time
@@ -103,14 +102,14 @@ dragon_features = dragon_features[:min_len]
 X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features, 
                     twin_combination_features, triplet_combination_features, dragon_features), axis=1)
 
-# 5. 標記樣本為1個時間視窗後的中獎號碼
+# 6. 標記樣本為1個時間視窗後的中獎號碼
 y = drawings[window_size:]
 
-# 將標簽編碼為一個熱向量
-y = np.array([to_categorical(label-1, num_classes=39) for label in y])
+# 将标签编码为一个热向量
+y = np.array([to_categorical(label-1, num_classes=40) for label in y])
 
-# 重塑標簽形狀為 (samples, 5, 39)
-y = y.reshape(y.shape[0], 5, 39)
+# 重塑标签形状为 (samples, 5, 40)
+y = y.reshape(y.shape[0], 5, 40)
 
 # 切分訓練/測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -118,52 +117,72 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 # 列印訓練集輸入特徵向量的形狀
 print("訓練集輸入特徵向量形狀:", X_train.shape)
 
+
 # 定義自定義激活函數
 def custom_activation(x):
     return (tf.clip_by_value(x, 0, 1) * 38) + 1
 
-# 將自定義激活函數註冊到TensorFlow中
+# 將自定義激活函數註冊到 TensorFlow 中
 get_custom_objects().update({'custom_activation': tf.keras.activations.get(custom_activation)})
 
-# 定義模型架構
-model = Sequential([
-    Input(shape=(X_train.shape[1],)),  # 添加Input層
-    Dense(128, activation='relu'),
-    Dense(64, activation='relu'),
-    Dense(5 * 39, activation=custom_activation),
-    Reshape((5, 39)),
-    Activation('softmax')  # 使用softmax激活函數
-])
+# 定義自定義模型
+@keras.utils.register_keras_serializable(package='Custom')
+class LotteryModel(tf.keras.Model):
+    def __init__(self, input_dim):
+        super(LotteryModel, self).__init__()
+        self.input_dim = input_dim
+        self.dense1 = Dense(128, activation='relu')
+        self.dense2 = Dense(64, activation='relu')
+        self.dense3 = Dense(5 * 40)  # 不指定激活函數
+        self.reshape = Reshape((5, 40))
+        self.custom_activation = Activation(custom_activation)  # 使用自定義激活函數
+
+    def call(self, inputs):
+        x = self.dense1(inputs)
+        x = self.dense2(x)
+        x = self.dense3(x)
+        x = self.custom_activation(x)  # 使用自定義激活函數
+        x = self.reshape(x)
+        return x
+
+    def get_config(self):
+        config = super(LotteryModel, self).get_config()
+        config.update({'input_dim': self.input_dim})
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        input_dim = config.pop('input_dim')
+        return cls(input_dim)
+
+# 創建模型實例
+input_shape = (X_train.shape[1],)
 
 # 加載模型權重
 epoc = int(input(f'載入模型步數: '))
-try:                      # 使用 try，測試內容是否正確
-    model_weights_path = f'my_lottery_model-C_{epoc}.weights.h5'
-    new_model = Sequential.from_config(model.get_config())
-    new_model.load_weights(model_weights_path)
+try:
+    model_weights_path = f'my_lottery_model-rt_{epoc}.weights.h5'
+    
+    # 創建新的模型實例
+    model = LotteryModel(input_shape)
+    
+    # 加載舊有的模型權重
+    model.load_weights(model_weights_path)
     print(f"模型權重 {model_weights_path} 已加載")
-    # 加載自定義對象
-    custom_objects_path = 'custom_objects-c.pkl'
-    with open(custom_objects_path, 'rb') as file:
-       custom_objects = pickle.load(file)
-    new_model.make_predict_function(custom_objects)  # 重新編譯模型並加載自定義對象
-    print(f"自定義對象從 {custom_objects_path} 已加載")
-except:                   # 如果 try 的內容發生錯誤，就執行 except 裡的內容
+
+except Exception as e:
+    print(f'發生錯誤: {e}')
+    print('模型不存在，從新訓練模型')
     epoc = 0
-    print('從新訓練模型')
+    model = LotteryModel(input_shape)  # 創建新的模型實例  
 
-# 訓練模型
 epo = int(input('輸入訓練週期數: '))
-
-# 記錄開始時間
-start_time = time.time()   
 
 # 0.定義損失函數
 def custom_loss(y_true, y_pred):
     # 計算每個樣本的交叉熵損失
     cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
     return tf.reduce_mean(cross_entropy)  # 返回批次中所有樣本損失的平均值
-
 
 # 1.將評估指標納入損失函數
 def combined_loss(y_true, y_pred):
@@ -183,16 +202,10 @@ def combined_loss_with_regularization(y_true, y_pred):
     # 計算交叉熵損失
     cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
     
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 組合損失函數,以0.5的權重平衡交叉熵損失和準確率
-    combined_loss = 0.5 * cross_entropy - 0.5 * accuracy
-    
     # 添加L2正則化項
     reg_loss = tf.reduce_sum(model.losses)
     
-    return combined_loss + reg_loss
+    return cross_entropy + reg_loss
 
 # 3.動態調整損失函數和評估指標權重
 def dynamic_loss(y_true, y_pred):
@@ -216,20 +229,17 @@ def dynamic_loss(y_true, y_pred):
     combined_loss = loss_weight * cross_entropy - acc_weight * accuracy
     
     return combined_loss
-    
-steps_per_epoch = len(lottery_data) // 32
+
+steps_per_epoch = len(lottery_data) // 128
 
 # 編譯模型
-model.compile(optimizer='adam', loss=combined_loss, metrics=['accuracy'])
+model.compile(optimizer='adam', loss=combined_loss_with_regularization, metrics=['accuracy'])
 
-# 訓練模型
-history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))
+# 記錄開始時間
+start_time = time.time()  
 
-# 保存模型權重
-ep = epoc + epo
-model_weights_path = f'my_lottery_model-C_{ep}.weights.h5'
-model.save_weights(model_weights_path)
-print(f"Epoch: {epo} \n模型權重已保存至 {model_weights_path}")
+# 訓練模型並獲取歷史記錄
+history = model.fit(X_train, y_train, epochs=epo, batch_size=128, validation_data=(X_test, y_test))
 
 # 獲取訓練過程中的損失值和準確率
 train_loss = history.history['loss']
@@ -245,11 +255,23 @@ max_val_acc_epoch = np.argmax(val_acc) + 1
 print(f'最低驗證集損失值: {np.min(val_loss):.4f}, 出現在第 {min_val_loss_epoch} 個週期')
 print(f'最高驗證集準確率: {np.max(val_acc):.4f}, 出現在第 {max_val_acc_epoch} 個週期')
 
+# 保存模型權重
+ep = epoc + epo
+model_weights_path = f'my_lottery_model-rt_{ep}.weights.h5'
+model.save_weights(model_weights_path)
+print(f"Epoch: {epo} \n模型權重已保存至 {model_weights_path}")
+
 # 保存自定義對象
-custom_objects_path = 'custom_objects-c.pkl'
+custom_objects_path = 'custom_objects-rt.pkl'
 with open(custom_objects_path, 'wb') as file:
     pickle.dump(get_custom_objects(), file)
 print(f"自定義對象已保存至 {custom_objects_path}")
+
+# 保存模型架構為 JSON 文件
+model_json = model.to_json()
+with open('model_architecture-rt.json', 'w') as json_file:
+    json_file.write(model_json)
+print(f"模型架構已保存至 model_architecture-rt.json")
 
 # 記錄結束時間
 end_time = time.time()
@@ -296,9 +318,10 @@ def predict_next_numbers(model, features, drawings, window_size, top_n):
                                       np.array(triplet_combination_features)[-1:], 
                                       np.array(dragon_features)[-1:]), axis=1)
 
-    # 進行預測
-    predicted_probs = model.predict(input_features)[0]
+    # 獲取預測概率
+    predicted_probs = model.predict(np.array([input_features]))[0]
     
+    # 對預測概率進行處理,確保和為1
     predicted_probs /= np.sum(predicted_probs)
     
     # 獲取預測概率從大到小排序的索引

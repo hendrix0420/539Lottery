@@ -20,15 +20,15 @@ drawings = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].values
 
 print("歷史開獎號碼:\n", dd)
 
-# 創建特徵
+# 创建特征
 features = []
 
-# 1. 對於每一期,統計每個號碼出現的次數作為特徵
+# 1. 对于每一期,统计每个号码出现的次数作为特征
 for draw in drawings:
-    feature = np.bincount(draw, minlength=40)[:39]  # 限制號碼範圍在1到39之間
+    feature = np.bincount(draw, minlength=40)[:39]  # 限制号码范围在1到39之间
     features.append(feature)
 
-# 2. 計算最近 n 期每個號碼的平均出現次數作為特徵
+# 2. 计算最近 n 期每个号码的平均出现次数作为特征
 window_size = 10
 windowed_features = []
 for i in range(len(features) - window_size):
@@ -36,26 +36,26 @@ for i in range(len(features) - window_size):
     windowed_feature = np.mean(window, axis=0)
     windowed_features.append(windowed_feature)
 
-# 3. 將號碼本身也作為特徵
+# 3. 将号码本身也作为特征
 single_draw_features = drawings[window_size:]
 
-# 4. 組合以上特徵
+# 4. 组合以上特征
 X = np.concatenate((features[window_size:], windowed_features, single_draw_features), axis=1)
 
-# 5. 標記樣本為1個時間視窗後的中獎號碼
+# 5. 标记样本为1个时间窗口后的中奖号码
 y = drawings[window_size:]
 
-# 將標簽編碼為一個熱向量
-y = np.array([to_categorical(label-1, num_classes=39) for label in y])
+# 将标签编码为一个热向量
+y = np.array([to_categorical(label-1, num_classes=40) for label in y])
 
-# 重塑標簽形狀為 (samples, 5, 39)
-y = y.reshape(y.shape[0], 5, 39)
+# 重塑标签形状为 (samples, 5, 40)
+y = y.reshape(y.shape[0], 5, 40)
 
-# 切分訓練/測試集
+# 切分训练/测试集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 列印訓練集輸入特徵向量的形狀
-print("訓練集輸入特徵向量形狀:", X_train.shape)
+# 打印训练集输入特征向量的形状
+print("训练集输入特征向量形状:", X_train.shape)
 
 # 定義自定義激活函數
 def custom_activation(x):
@@ -69,20 +69,21 @@ model = Sequential([
     Input(shape=(X_train.shape[1],)),  # 添加Input層
     Dense(128, activation='relu'),
     Dense(64, activation='relu'),
-    Dense(5 * 39, activation=custom_activation),
-    Reshape((5, 39)),
-    Activation('softmax')  # 使用softmax激活函數
+    Dense(5 * 40, activation='relu'),
+    Reshape((5, 40)),  # 将输出重塑为 (5, 40) 的形状
+    Dense(40, activation='softmax')  # 输出维度为39,每个号码是一个39分类问题
 ])
+
 
 # 加載模型權重
 epoc = int(input(f'載入模型步數: '))
 try:                      # 使用 try，測試內容是否正確
-    model_weights_path = f'my_lottery_model_{epoc}.weights.h5'
+    model_weights_path = f'my_lottery_model-t_{epoc}.weights.h5'
     new_model = Sequential.from_config(model.get_config())
     new_model.load_weights(model_weights_path)
     print(f"模型權重 {model_weights_path} 已加載")
     # 加載自定義對象
-    custom_objects_path = 'custom_objects.pkl'
+    custom_objects_path = 'custom_objects-t.pkl'
     with open(custom_objects_path, 'rb') as file:
        custom_objects = pickle.load(file)
     new_model.make_predict_function(custom_objects)  # 重新編譯模型並加載自定義對象
@@ -119,12 +120,12 @@ print(f'最高驗證集準確率: {np.max(val_acc):.4f}, 出現在第 {max_val_a
 
 # 保存模型權重
 ep = epoc + epo
-model_weights_path = f'my_lottery_model_{ep}.weights.h5'
+model_weights_path = f'my_lottery_model-t_{ep}.weights.h5'
 model.save_weights(model_weights_path)
 print(f"Epoch: {epo} \n模型權重已保存至 {model_weights_path}")
 
 # 保存自定義對象
-custom_objects_path = 'custom_objects.pkl'
+custom_objects_path = 'custom_objects-t.pkl'
 with open(custom_objects_path, 'wb') as file:
     pickle.dump(get_custom_objects(), file)
 print(f"自定義對象已保存至 {custom_objects_path}")
@@ -144,7 +145,7 @@ print(f"代碼執行完成，總耗時: {elapsed_formatted}")
 # 獲取最後一期開獎號碼
 last_numbers = drawings[-1]
 
-# 將最後一期開獎號碼轉換為向量形式
+# 将最后一期开奖号码转换为向量形式
 def to_vector(numbers):
     vector = np.zeros(5)
     for i, num in enumerate(numbers):
@@ -152,32 +153,34 @@ def to_vector(numbers):
             vector[i] = 1
     return vector
 
-# 將最後一期開獎號碼向量化，使其長度為5
+# 将最后一期开奖号码向量化，使其长度为5
 last_vector = to_vector(last_numbers)
-print("上一期開獎號碼: ", dd[-1])
+print("上一期开奖号码: ", last_numbers)
 
-def predict_next_numbers(model, features, drawings, window_size, top_n):
+window_size = 10  # 与训练时使用的 window_size 值相同
+
+def predict_next_numbers(model, features, drawings, window_size):
     # 構造預測輸入特徵向量
     last_feature = features[-1]
     windowed_features = features[-window_size:]
     windowed_feature = np.mean(windowed_features, axis=0)
     input_features = np.concatenate((last_feature, windowed_feature, last_vector))
-    
-    # 獲取預測概率
+
+    # 打印預測輸入特徵向量的形狀和值
+    print("Last_feature: ", len(last_feature), ", Windowed_feature: ", len(windowed_feature), ", Last Vector: ", len(last_vector))
+    print("預測輸入特徵向量形狀:", input_features.shape)
+    print("預測輸入特徵向量值:\n", input_features)
+
+    # 預測下一期開獎號碼的概率分佈
     predicted_probs = model.predict(np.array([input_features]))[0]
     
-    # 對預測概率進行處理,確保和為1
-    predicted_probs /= np.sum(predicted_probs)
-    
-    # 獲取預測概率從大到小排序的索引
-    sorted_indices = np.argsort(-predicted_probs).flatten()
-    
-    # 獲取前 top_n 個概率最高的號碼
-    top_numbers = [i+1 for i in sorted_indices[:top_n]]
-    
-    # 輸出預測的號碼範圍
-    print(f"預測下一期539開獎號碼範圍為: {top_numbers}")
+    # 從概率分佈中選擇最大的5個概率對應的號碼
+    top_indices = np.argsort(predicted_probs).flatten()[-5:][::-1] + 1
+    predicted_numbers = [num for num in top_indices if 1 <= num <= 39]
 
-# 調用預測函數
-predict_next_numbers(model, features, drawings, window_size, top_n=10)
+    # 輸出預測結果
+    print(f"預測下一期539開獎號碼為: {predicted_numbers}")
 
+
+# 调用预测函数
+predict_next_numbers(model, features, drawings, window_size)
