@@ -430,8 +430,9 @@ while start_date_index is not None and start_date_index < len(date):
     p_date_numbers = drawings[start_date_index - 1]
     specified_date = date[start_date_index]
     specified_date_numbers = drawings[start_date_index] 
-    ln = calculate_life_number(str(specified_date)) #生命靈數    
-    print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
+    pn = calculate_life_number(str(p_date)) #前期生命靈數    
+    ln = calculate_life_number(str(specified_date)) #本期生命靈數    
+    print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers} 生命靈數: {pn}")
     print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers} 生命靈數: {ln}")
     top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n)   
 
