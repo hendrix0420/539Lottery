@@ -10,13 +10,14 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.utils import get_custom_objects
 import pickle
+import re
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
 
 # 提取每期開獎號碼
 dd = lottery_data[['日期', 'NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].values
-date = lottery_data[['日期']].values
+date = lottery_data['日期'].values 
 drawings = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].values
 
 print("歷史開獎號碼:\n", dd)
@@ -84,26 +85,38 @@ triplet_combination_features = triplet_combination_feature(drawings)
 # 計算斷龍特徵
 dragon_features = dragon_feature(consecutive_features)
 
-# 獲取所有特徵長度的最小值
-min_len = min(len(features[window_size:]), len(windowed_features), len(single_draw_features), 
-              len(consecutive_features), len(twin_combination_features),
-              len(triplet_combination_features), len(dragon_features))
+# 5. 新增特徵：生命靈數特徵
+def calculate_life_number(date_str):
+    digits = re.sub(r'\D', '', date_str)
+    digit_sum = sum(int(d) for d in digits)
+    while digit_sum >= 10:
+        digit_sum = sum(int(d) for d in str(digit_sum))
+    return digit_sum
 
-# 對長度較長的特徵陣列進行裁剪
-features = features[window_size:][:min_len]
+life_numbers = [calculate_life_number(str(date)) for date in date[window_size:]]
+life_number_features = np.array(life_numbers).reshape(-1, 1)
+
+# 6. 拼接特徵
+# 確保所有特徵向量的長度相同
+min_len = min(len(features), len(windowed_features), len(single_draw_features), 
+              len(consecutive_features), len(twin_combination_features),
+              len(triplet_combination_features), len(dragon_features), len(life_number_features))
+
+features = features[:min_len]
 windowed_features = windowed_features[:min_len]
 single_draw_features = single_draw_features[:min_len]
 consecutive_features = consecutive_features[:min_len]
 twin_combination_features = twin_combination_features[:min_len]
 triplet_combination_features = triplet_combination_features[:min_len]
 dragon_features = dragon_features[:min_len]
+life_number_features = life_number_features[:min_len]
 
-# 5. 拼接特徵
-X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features, 
-                    twin_combination_features, triplet_combination_features, dragon_features), axis=1)
+X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features,
+                    twin_combination_features, triplet_combination_features, dragon_features,
+                    life_number_features), axis=1)
 
-# 5. 標記樣本為1個時間視窗後的中獎號碼
-y = drawings[window_size:]
+# 7. 標記樣本為1個時間視窗後的中獎號碼
+y = drawings[window_size:window_size+min_len]
 
 # 将标签编码为一个热向量
 y = np.array([to_categorical(label-1, num_classes=40) for label in y])
@@ -174,10 +187,14 @@ def get_previous_numbers(date, lottery_data):
         print("將使用最後一期開獎號碼作為參考")
     return previous_numbers
 
-# 獲取指定日期前一期或最後一期的開獎號碼
+# 輸入指定日期
 specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
+
+# 獲取指定日期前一期或最後一期的開獎號碼
 previous_date = get_previous_date(specified_date, lottery_data)
 previous_numbers = get_previous_numbers(specified_date, lottery_data)
+pln = calculate_life_number(str(previous_date)) #前一期生命靈數
+dln = calculate_life_number(str(specified_date)) #指定日期生命靈數
 
 if previous_numbers is None:
     previous_numbers = drawings[-1]
@@ -195,6 +212,7 @@ def to_vector(numbers):
 
 # 將最後一期開獎號碼向量化，使其長度為5
 last_vector = to_vector(previous_numbers)
+print("上一期開獎號碼: ", previous_date, previous_numbers, "生命靈數: ", pln)
 
 # 預測號碼數量
 top_n = int(input('預測號碼數量： '))
@@ -218,8 +236,9 @@ def predict_next_numbers(model, features, drawings, window_size, top_n):
                                       np.array(consecutive_features)[-1:], 
                                       np.array(twin_combination_features)[-1:], 
                                       np.array(triplet_combination_features)[-1:], 
-                                      np.array(dragon_features)[-1:]), axis=1)
-
+                                      np.array(dragon_features)[-1:], 
+                                      np.array(life_number_features)[-1:]), axis=1)
+                                      
     # 進行預測
     predicted_probs = model.predict(input_features)[0]
     
@@ -239,7 +258,7 @@ def predict_next_numbers(model, features, drawings, window_size, top_n):
     if specified_date in date:
         index = np.where(date == specified_date)[0][0]
         specified_date_numbers = drawings[index]
-        print(f"指定日期 {specified_date} 的開獎號碼為: {specified_date_numbers}")
+        print(f"指定日期 {specified_date} 的開獎號碼為: {specified_date_numbers} 生命靈數: {dln}")
 
     # 進行對獎
     if specified_date_numbers is not None:

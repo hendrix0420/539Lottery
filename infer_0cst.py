@@ -14,6 +14,7 @@ from tensorflow.keras.utils import get_custom_objects
 import pickle
 from datetime import datetime
 import time
+import re
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
@@ -88,26 +89,38 @@ triplet_combination_features = triplet_combination_feature(drawings)
 # 計算斷龍特徵
 dragon_features = dragon_feature(consecutive_features)
 
-# 獲取所有特徵長度的最小值
-min_len = min(len(features[window_size:]), len(windowed_features), len(single_draw_features), 
-              len(consecutive_features), len(twin_combination_features),
-              len(triplet_combination_features), len(dragon_features))
+# 5. 新增特徵：生命靈數特徵
+def calculate_life_number(date_str):
+    digits = re.sub(r'\D', '', date_str)
+    digit_sum = sum(int(d) for d in digits)
+    while digit_sum >= 10:
+        digit_sum = sum(int(d) for d in str(digit_sum))
+    return digit_sum
 
-# 對長度較長的特徵陣列進行裁剪
-features = features[window_size:][:min_len]
+life_numbers = [calculate_life_number(str(date)) for date in date[window_size:]]
+life_number_features = np.array(life_numbers).reshape(-1, 1)
+
+# 6. 拼接特徵
+# 確保所有特徵向量的長度相同
+min_len = min(len(features), len(windowed_features), len(single_draw_features), 
+              len(consecutive_features), len(twin_combination_features),
+              len(triplet_combination_features), len(dragon_features), len(life_number_features))
+
+features = features[:min_len]
 windowed_features = windowed_features[:min_len]
 single_draw_features = single_draw_features[:min_len]
 consecutive_features = consecutive_features[:min_len]
 twin_combination_features = twin_combination_features[:min_len]
 triplet_combination_features = triplet_combination_features[:min_len]
 dragon_features = dragon_features[:min_len]
+life_number_features = life_number_features[:min_len]
 
-# 5. 拼接特徵
-X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features, 
-                    twin_combination_features, triplet_combination_features, dragon_features), axis=1)
+X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features,
+                    twin_combination_features, triplet_combination_features, dragon_features,
+                    life_number_features), axis=1)
 
-# 5. 標記樣本為1個時間視窗後的中獎號碼
-y = drawings[window_size:]
+# 7. 標記樣本為1個時間視窗後的中獎號碼
+y = drawings[window_size:window_size+min_len]
 
 # 将标签编码为一个热向量
 y = np.array([to_categorical(label-1, num_classes=40) for label in y])
@@ -192,6 +205,8 @@ specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
 # 獲取指定日期前一期或最後一期的開獎號碼
 previous_date = get_previous_date(specified_date, lottery_data)
 previous_numbers = get_previous_numbers(specified_date, lottery_data)
+pln = calculate_life_number(str(previous_date)) #前一期生命靈數
+dln = calculate_life_number(str(specified_date)) #指定日期生命靈數
 
 # 獲取開始日期在資料中的索引
 start_date = specified_date
@@ -212,7 +227,7 @@ if os.path.exists('infer_0cst_results.csv'):
 def save_csv(specified_date, specified_date_numbers, top_numbers, matched_numbers):    
     with open('infer_0cst_results.csv', 'a', newline='', encoding='utf-8-sig') as csvfile:
         # 定義 CSV 欄位名稱
-        fieldnames = ['對獎日期', '開獎號碼', '預測開獎號碼範圍', '對中的號碼數量', '對中的號碼']
+        fieldnames = ['對獎日期', '開獎號碼', '預測開獎號碼範圍', '對中的號碼數量', '對中的號碼', '生命靈數']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)  
         
         # 如果檔案是新建立的，則寫入標題行
@@ -220,7 +235,7 @@ def save_csv(specified_date, specified_date_numbers, top_numbers, matched_number
             writer.writeheader()  
         
         # 寫入資料行
-        writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers})
+        writer.writerow({'對獎日期': specified_date, '開獎號碼': specified_date_numbers, '預測開獎號碼範圍': top_numbers, '對中的號碼數量': len(matched_numbers), '對中的號碼': matched_numbers, '生命靈數': ln})
 
 # 記錄開始時間
 start_time = time.time()       
@@ -297,26 +312,38 @@ while start_date_index is not None and start_date_index < len(date):
     # 計算斷龍特徵
     dragon_features = dragon_feature(consecutive_features)
 
-    # 獲取所有特徵長度的最小值
-    min_len = min(len(features[window_size:]), len(windowed_features), len(single_draw_features), 
-              len(consecutive_features), len(twin_combination_features),
-              len(triplet_combination_features), len(dragon_features))
+    # 5. 新增特徵：生命靈數特徵
+    def calculate_life_number(date_str):
+        digits = re.sub(r'\D', '', date_str)
+        digit_sum = sum(int(d) for d in digits)
+        while digit_sum >= 10:
+            digit_sum = sum(int(d) for d in str(digit_sum))
+        return digit_sum
 
-    # 對長度較長的特徵陣列進行裁剪
-    features = features[window_size:][:min_len]
+    life_numbers = [calculate_life_number(str(date)) for date in date[window_size:]]
+    life_number_features = np.array(life_numbers).reshape(-1, 1)
+
+    # 6. 拼接特徵
+    # 確保所有特徵向量的長度相同
+    min_len = min(len(features), len(windowed_features), len(single_draw_features), 
+                  len(consecutive_features), len(twin_combination_features),
+                  len(triplet_combination_features), len(dragon_features), len(life_number_features))
+
+    features = features[:min_len]
     windowed_features = windowed_features[:min_len]
     single_draw_features = single_draw_features[:min_len]
     consecutive_features = consecutive_features[:min_len]
     twin_combination_features = twin_combination_features[:min_len]
     triplet_combination_features = triplet_combination_features[:min_len]
     dragon_features = dragon_features[:min_len]
+    life_number_features = life_number_features[:min_len]
 
-    # 5. 拼接特徵
-    X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features, 
-                    twin_combination_features, triplet_combination_features, dragon_features), axis=1)
+    X = np.concatenate((features, windowed_features, single_draw_features, consecutive_features,
+                        twin_combination_features, triplet_combination_features, dragon_features,
+                        life_number_features), axis=1)
 
-    # 5. 標記樣本為1個時間視窗後的中獎號碼
-    y = drawings[window_size:]
+    # 7. 標記樣本為1個時間視窗後的中獎號碼
+    y = drawings[window_size:window_size+min_len]
 
     # 將標簽編碼為一個熱向量
     y = np.array([to_categorical(label-1, num_classes=40) for label in y])
@@ -364,7 +391,8 @@ while start_date_index is not None and start_date_index < len(date):
                                       np.array(consecutive_features)[-1:], 
                                       np.array(twin_combination_features)[-1:], 
                                       np.array(triplet_combination_features)[-1:], 
-                                      np.array(dragon_features)[-1:]), axis=1)
+                                      np.array(dragon_features)[-1:], 
+                                      np.array(life_number_features)[-1:]), axis=1)
 
         # 進行預測
         predicted_probs = model.predict(input_features)[0]
@@ -401,9 +429,10 @@ while start_date_index is not None and start_date_index < len(date):
     p_date = date[start_date_index - 1]
     p_date_numbers = drawings[start_date_index - 1]
     specified_date = date[start_date_index]
-    specified_date_numbers = drawings[start_date_index]   
+    specified_date_numbers = drawings[start_date_index] 
+    ln = calculate_life_number(str(specified_date)) #生命靈數    
     print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
-    print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
+    print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers} 生命靈數: {ln}")
     top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n)   
 
     # 進行對獎
