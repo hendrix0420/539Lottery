@@ -1,4 +1,8 @@
 @echo off
+python -m venv 539-venv
+539-venv\Scripts\activate
+pip install -r requirements.txt
+
 
 REM conda常用的命令：
 REM conda list 查看安装了哪些包。conda info 系統資訊
@@ -17,7 +21,7 @@ REM conda create --name vall python=3.10
 
 REM pip install -r requirements.txt
 
-conda activate 539
+REM conda activate 539
 
 REM conda deactivate
 
