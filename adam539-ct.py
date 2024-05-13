@@ -9,6 +9,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.utils import get_custom_objects
+from tensorflow.keras.optimizers import Adam
 import pickle
 import time
 import re
@@ -172,6 +173,9 @@ epo = int(input('輸入訓練週期數: '))
 # 記錄開始時間
 start_time = time.time()   
 
+# 設置學習率為0.01的Adam優化器
+custom_adam_optimizer = Adam(learning_rate=0.00001)
+
 # 0.定義損失函數
 def custom_loss(y_true, y_pred):
     # 計算每個樣本的交叉熵損失
@@ -234,7 +238,7 @@ def dynamic_loss(y_true, y_pred):
 steps_per_epoch = len(lottery_data) // 32
 
 # 編譯模型
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer=custom_adam_optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
 # 訓練模型
 history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))

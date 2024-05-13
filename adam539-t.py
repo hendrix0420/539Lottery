@@ -7,6 +7,7 @@ from tensorflow.keras.utils import to_categorical
 import tensorflow.keras.backend as K
 import tensorflow as tf
 from tensorflow.keras.utils import get_custom_objects
+from tensorflow.keras.optimizers import Adam
 import pickle
 import time
 
@@ -98,8 +99,11 @@ epo = int(input('輸入訓練週期數: '))
 # 記錄開始時間
 start_time = time.time()   
 
+# 設置學習率為0.01的Adam優化器
+custom_adam_optimizer = Adam(learning_rate=0.00001)
+
 # 編譯模型
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(optimizer=custom_adam_optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
 # 訓練模型並獲取歷史記錄
 history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))

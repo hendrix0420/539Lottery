@@ -8,6 +8,7 @@ import tensorflow.keras.backend as K
 import tensorflow as tf
 import tensorflow.keras as keras
 from tensorflow.keras.utils import get_custom_objects
+from tensorflow.keras.optimizers import Adam
 import pickle
 import time
 
@@ -230,16 +231,19 @@ def dynamic_loss(y_true, y_pred):
     
     return combined_loss
 
-steps_per_epoch = len(lottery_data) // 128
+steps_per_epoch = len(lottery_data) // 32
+
+# 設置學習率為0.01的Adam優化器
+custom_adam_optimizer = Adam(learning_rate=0.0001)
 
 # 編譯模型
-model.compile(optimizer='adam', loss=combined_loss_with_regularization, metrics=['accuracy'])
+model.compile(optimizer=custom_adam_optimizer, loss=combined_loss_with_regularization, metrics=['accuracy'])
 
 # 記錄開始時間
 start_time = time.time()  
 
 # 訓練模型並獲取歷史記錄
-history = model.fit(X_train, y_train, epochs=epo, batch_size=128, validation_data=(X_test, y_test))
+history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))
 
 # 獲取訓練過程中的損失值和準確率
 train_loss = history.history['loss']
