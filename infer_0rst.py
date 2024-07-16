@@ -175,49 +175,58 @@ except Exception as e:
    
    
 # 獲取指定日期前一期的日期
-def get_previous_date(date, lottery_data):    
+def get_previous_date(date, lottery_data):
     previous_date = None
     try:
         if date.strip() == "":
-            previous_date = lottery_data['日期'].iloc[1]            
+            previous_date = lottery_data['日期'].iloc[-1]
         else:
             index = np.where(lottery_data['日期'] == date)[0][0]
             if index > 0:
                 previous_date = lottery_data['日期'].iloc[index - 1]
-    except IndexError:        
-        # 異常發生時不做任何動作，直接跳過        
-        pass
+            else:
+                previous_date = lottery_data['日期'].iloc[-1]
+    except IndexError:
+        # 異常發生時不做任何動作，直接跳過
+        previous_date = lottery_data['日期'].iloc[-1]
+    except KeyError:
+        previous_date = lottery_data['日期'].iloc[-1]
     return previous_date
 
 # 獲取指定日期前一期的開獎號碼
-def get_previous_numbers(date, lottery_data):    
+def get_previous_numbers(date, lottery_data):
     previous_numbers = None
     try:
         if date.strip() == "":
-            previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[1].values
+            previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[-1].values
         else:
             index = np.where(lottery_data['日期'] == date)[0][0]
             if index > 0:
                 previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[index - 1].values
+            else:
+                previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[-1].values
     except IndexError:
         # 異常發生時不做任何動作，直接跳過
-        pass
+        previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[-1].values
+    except KeyError:
+        previous_numbers = lottery_data[['NUM1', 'NUM2', 'NUM3', 'NUM4', 'NUM5']].iloc[-1].values
     return previous_numbers
 
-# 獲取指定日期前一期或最後一期的開獎號碼
-specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
-
-# 獲取指定日期前一期或最後一期的開獎號碼
-previous_date = get_previous_date(specified_date, lottery_data)
-previous_numbers = get_previous_numbers(specified_date, lottery_data)
-
 # 獲取開始日期在資料中的索引
+specified_date = input("請輸入指定日期（格式：YYYY/MM/DD）：")
 start_date = specified_date
+
 if start_date.strip() == "":
     start_date_index = 1 
     print("未指定開始日期，將從第二筆資料開始。")
 else:
-    start_date_index = np.where(date == start_date)[0][0] if start_date in date else None 
+    start_date_index = np.where(date == start_date)[0][0] if start_date in date else None
+    if start_date_index is None:
+        start_date_index = len(date) - 1
+
+# 獲取指定日期前一期或最後一期的開獎號碼
+previous_date = get_previous_date(start_date, lottery_data)
+previous_numbers = get_previous_numbers(start_date, lottery_data)
 
 
 # 打開 CSV 檔案以寫入模式
@@ -432,8 +441,11 @@ while start_date_index is not None and start_date_index < len(date):
     p_date_numbers = drawings[start_date_index - 1]
     specified_date = date[start_date_index]
     specified_date_numbers = drawings[start_date_index]   
-    print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
-    print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
+    if start_date_index == len(date) - 1:
+       print(f"對獎日期前期 {specified_date} 的開獎號碼: {specified_date_numbers}")
+    else:
+       print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
+       print(f"正在對獎日期 {specified_date} 的開獎號碼: {specified_date_numbers}")
     top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n)   
     
     # 進行對獎
