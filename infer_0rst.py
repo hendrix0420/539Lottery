@@ -254,7 +254,7 @@ start_time = time.time()
      
 # 總預測期數
 if start_date_index is not None:
-    draws_predicted = len(date) - start_date_index + 1
+    draws_predicted = len(date) - start_date_index
     
 # 預測號碼數量
 top_n = int(input('預測號碼數量： '))
@@ -441,7 +441,7 @@ while start_date_index is not None and start_date_index < len(date):
     p_date_numbers = drawings[start_date_index - 1]
     specified_date = date[start_date_index]
     specified_date_numbers = drawings[start_date_index]   
-    if start_date_index == len(date) - 1:
+    if start_date_index == len(date)-1:
        print(f"對獎日期前期 {specified_date} 的開獎號碼: {specified_date_numbers}")
     else:
        print(f"對獎日期前期 {p_date} 的開獎號碼: {p_date_numbers}")
@@ -449,14 +449,17 @@ while start_date_index is not None and start_date_index < len(date):
     top_numbers = predict_next_numbers(model, features, drawings, window_size, top_n)   
     
     # 進行對獎
-    if specified_date_numbers is not None:
+    if specified_date_numbers is not None and start_date_index != len(date)-1:
         matched_numbers = set(top_numbers).intersection(set(specified_date_numbers))
         print(f"預測號碼與指定日期開獎號碼對中的號碼數量為: {len(matched_numbers)}")
         if(len(matched_numbers)!=0):
           print(f"對中的號碼為: {matched_numbers}\n------------------------------------------------------") 
         else:
           print("未對中任何號碼\n------------------------------------------------------")
-    
+    else:
+        matched_numbers = "尚未開獎"
+        print(matched_numbers)        
+ 
     # 保存至 infers_results.csv 檔案中
     if len(matched_numbers) != 0:
           save_csv(specified_date, specified_date_numbers, top_numbers, matched_numbers)
