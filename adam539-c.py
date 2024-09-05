@@ -2,15 +2,30 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
-from keras.layers import Input, Dense, Reshape, Activation
+from tensorflow.keras.layers import Input, Dense, Reshape, Activation, Dropout, BatchNormalization, LeakyReLU
 from tensorflow.keras.utils import to_categorical
 import tensorflow.keras.backend as K
 import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
 from tensorflow.keras.utils import get_custom_objects
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.regularizers import l1_l2
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.optimizers.schedules import LearningRateSchedule
 import pickle
 import time
+import os
+import re
+import glob
+import warnings
+
+# 忽略特定的警告
+warnings.filterwarnings('ignore', category=UserWarning, module='tensorflow')
+
+# 如果您確實需要對 tf.data 操作啟用 eager execution，取消下面這行的註釋
+# tf.data.experimental.enable_debug_mode()
+
+# 移除這行，除非您確實需要它
+# tf.config.run_functions_eagerly(True)
 
 # 載入歷史彩票開獎號碼數據
 lottery_data = pd.read_csv('539_results.csv')
@@ -125,131 +140,191 @@ def custom_activation(x):
 # 將自定義激活函數註冊到TensorFlow中
 get_custom_objects().update({'custom_activation': tf.keras.activations.get(custom_activation)})
 
-# 定義模型架構
-model = Sequential([
-    Input(shape=(X_train.shape[1],)),  # 添加Input層
-    Dense(128, activation='relu'),
-    Dense(64, activation='relu'),
-    Dense(5 * 39, activation=custom_activation),
-    Reshape((5, 39)),
-    Activation('softmax')  # 使用softmax激活函數
-])
+# 定義帶有預熱的循環學習率調度
+class WarmupCyclicLR(LearningRateSchedule):
+    def __init__(self, base_lr, max_lr, step_size, warmup_steps=1000):
+        super(WarmupCyclicLR, self).__init__()
+        self.base_lr = tf.cast(base_lr, dtype=tf.float32)
+        self.max_lr = tf.cast(max_lr, dtype=tf.float32)
+        self.step_size = tf.cast(step_size, dtype=tf.float32)
+        self.warmup_steps = tf.cast(warmup_steps, dtype=tf.float32)
+        
+    def __call__(self, step):
+        step = tf.cast(step, dtype=tf.float32)
+        
+        # 預熱階段
+        warmup_lr = self.base_lr + (self.max_lr - self.base_lr) * (step / self.warmup_steps)
+        
+        # 循環學習率階段
+        cycle = tf.floor(1 + (step - self.warmup_steps) / (2 * self.step_size))
+        x = tf.abs((step - self.warmup_steps) / self.step_size - 2 * cycle + 1)
+        cyclic_lr = self.base_lr + (self.max_lr - self.base_lr) * tf.maximum(0.0, (1 - x))
+        
+        # 使用 tf.cond 來選擇適當的學習率
+        return tf.cond(step < self.warmup_steps, lambda: warmup_lr, lambda: cyclic_lr)
 
-# 加載模型權重
-epoc = int(input(f'載入模型步數: '))
-try:                      # 使用 try，測試內容是否正確
-    model_weights_path = f'my_lottery_model-C_{epoc}.weights.h5'
-    new_model = Sequential.from_config(model.get_config())
-    new_model.load_weights(model_weights_path)
-    print(f"模型權重 {model_weights_path} 已加載")
-    # 加載自定義對象
-    custom_objects_path = 'custom_objects-c.pkl'
-    with open(custom_objects_path, 'rb') as file:
-       custom_objects = pickle.load(file)
-    new_model.make_predict_function(custom_objects)  # 重新編譯模型並加載自定義對象
-    print(f"自定義對象從 {custom_objects_path} 已加載")
-except:                   # 如果 try 的內容發生錯誤，就執行 except 裡的內容
-    epoc = 0
-    print('從新訓練模型')
+# 修改模型創建函數，增加正則化
+def create_model(input_shape):
+    model = Sequential([
+        Input(shape=(input_shape,)),
+        Dense(512, kernel_regularizer=l1_l2(l1=0.0001, l2=0.001)),
+        BatchNormalization(),
+        LeakyReLU(negative_slope=0.1),
+        Dropout(0.5),
+        Dense(256, kernel_regularizer=l1_l2(l1=0.0001, l2=0.001)),
+        BatchNormalization(),
+        LeakyReLU(negative_slope=0.1),
+        Dropout(0.5),
+        Dense(128, kernel_regularizer=l1_l2(l1=0.0001, l2=0.001)),
+        BatchNormalization(),
+        LeakyReLU(negative_slope=0.1),
+        Dropout(0.5),
+        Dense(64, kernel_regularizer=l1_l2(l1=0.0001, l2=0.001)),
+        BatchNormalization(),
+        LeakyReLU(negative_slope=0.1),
+        Dropout(0.5),
+        Dense(5 * 39, activation=custom_activation, kernel_regularizer=l1_l2(l1=0.0001, l2=0.001)),
+        Reshape((5, 39)),
+        Activation('softmax')
+    ])
+    return model
 
-# 訓練模型
-epo = int(input('輸入訓練週期數: '))
+# 創建保存檢查點的目錄
+checkpoint1_dir = "checkpoint1"
+best_checkpoint_dir = "best_checkpoint"
+os.makedirs(checkpoint1_dir, exist_ok=True)
+os.makedirs(best_checkpoint_dir, exist_ok=True)
+
+# 定義保存模型的回調函數
+class SaveModelCallback(tf.keras.callbacks.Callback):
+    def __init__(self, save_freq=100, checkpoint_dir='checkpoint1', initial_epoch=0):
+        super(SaveModelCallback, self).__init__()
+        self.save_freq = save_freq
+        self.checkpoint_dir = checkpoint_dir
+        self.initial_epoch = initial_epoch
+
+    def on_epoch_end(self, epoch, logs=None):
+        current_epoch = self.initial_epoch + epoch + 1
+        if (current_epoch - self.initial_epoch) % self.save_freq == 0:
+            save_path = os.path.join(self.checkpoint_dir, f'my_lottery_model_{current_epoch}.weights.h5')
+            self.model.save_weights(save_path)
+            print(f"\n模型權重已保存至 {save_path}")
+
+# 詢問用戶是否要載入之前的模型
+load_option = input("請選擇要加載的模型類型 (1: 特定步數模型, 2: 最佳模型, 3: 從頭開始訓練): ")
+
+if load_option == '1':
+    epoc = int(input('載入模型步數: '))
+    model_weights_path = os.path.join('checkpoint1', f'my_lottery_model_{epoc}.weights.h5')
+    total_epochs = epoc
+elif load_option == '2':
+    epoc = input('請輸入最佳模型步數 (直接按Enter使用最新的最佳模型): ')
+    if epoc:
+        model_weights_path = os.path.join('best_checkpoint', f'best_lottery_model_{epoc}.weights.h5')
+    else:
+        # 尋找最新的最佳模型
+        best_models = glob.glob(os.path.join('best_checkpoint', 'best_lottery_model*.weights.h5'))
+        if best_models:
+            latest_model = max(best_models, key=os.path.getctime)
+            model_weights_path = latest_model
+            # 使用正則表達式從文件名中提取步數
+            match = re.search(r'best_lottery_model_?(\d+)\.weights\.h5', os.path.basename(latest_model))
+            if match:
+                epoc = int(match.group(1))
+            else:
+                print("無法從文件名中提取步數，將從頭開始訓練")
+                model_weights_path = None
+                epoc = 0
+        else:
+            model_weights_path = None
+    
+    if not model_weights_path or not os.path.exists(model_weights_path):
+        print(f"找不到指定的最佳模型，將從頭開始訓練")
+        model_weights_path = None
+        total_epochs = 0
+    else:
+        total_epochs = int(epoc)
+        print(f"找到最佳模型：{model_weights_path}")
+else:
+    print('將從頭開始訓練')
+    model_weights_path = None
+    total_epochs = 0
+
+# 創建模型
+model = create_model(X_train.shape[1])
+
+# 如果選擇載入模型，則嘗試載入權重
+if model_weights_path and os.path.exists(model_weights_path):
+    model.load_weights(model_weights_path)
+    print(f"已加載模型權重: {model_weights_path}")
+    print(f"當前累計訓練步數: {total_epochs}")
+else:
+    print('未找到模型權重文件或選擇從頭開始訓練')
+    total_epochs = 0
+
+# 詢問用戶要訓練的步數
+new_epochs = int(input('請輸入要訓練的步數: '))
 
 # 記錄開始時間
 start_time = time.time()   
 
-# 0.定義損失函數
-def custom_loss(y_true, y_pred):
-    # 計算每個樣本的交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    return tf.reduce_mean(cross_entropy)  # 返回批次中所有樣本損失的平均值
+# 創建帶有預熱的循環學習率調度
+lr_schedule = WarmupCyclicLR(base_lr=1e-6, max_lr=1e-4, step_size=2000, warmup_steps=1000)
 
+# 使用循環學習率創建優化器
+optimizer = Adam(learning_rate=lr_schedule)
 
-# 1.將評估指標納入損失函數
-def combined_loss(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 組合損失函數,以0.5的權重平衡交叉熵損失和準確率
-    combined_loss = 0.5 * cross_entropy - 0.5 * accuracy
-    
-    return combined_loss
+model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
 
-# 2.使用正則化項
-def combined_loss_with_regularization(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 組合損失函數,以0.5的權重平衡交叉熵損失和準確率
-    combined_loss = 0.5 * cross_entropy - 0.5 * accuracy
-    
-    # 添加L2正則化項
-    reg_loss = tf.reduce_sum(model.losses)
-    
-    return combined_loss + reg_loss
+# 定義回調函數
+early_stopping = EarlyStopping(
+    monitor='val_loss', 
+    patience=500,
+    restore_best_weights=True,
+    verbose=1
+)
 
-# 3.動態調整損失函數和評估指標權重
-def dynamic_loss(y_true, y_pred):
-    # 計算交叉熵損失
-    cross_entropy = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-    
-    # 計算準確率
-    accuracy = tf.keras.metrics.categorical_accuracy(y_true, y_pred)
-    
-    # 獲取當前訓練步數
-    iterations = tf.keras.backend.get_value(model.optimizer.iterations)
-    
-    # 計算當前epoch
-    epoch = iterations // steps_per_epoch
-    
-    # 動態調整權重
-    loss_weight = tf.maximum(0.8 - 0.005 * tf.cast(epoch, tf.float32), 0.2)
-    acc_weight = 1.0 - loss_weight
-    
-    # 組合損失函數
-    combined_loss = loss_weight * cross_entropy - acc_weight * accuracy
-    
-    return combined_loss
-    
-steps_per_epoch = len(lottery_data) // 32
+# 設置最佳模型檢查點
+best_checkpoint_path = os.path.join('best_checkpoint', f'best_lottery_model.weights.h5')
+model_checkpoint = ModelCheckpoint(
+    filepath=best_checkpoint_path,
+    save_weights_only=True,
+    save_best_only=True,
+    monitor='val_loss',
+    mode='min',
+    verbose=1
+)
 
-# 編譯模型
-model.compile(optimizer='adam', loss=combined_loss, metrics=['accuracy'])
+# 創建保存模型的回調函數
+save_model_callback = SaveModelCallback(save_freq=100, checkpoint_dir='checkpoint1', initial_epoch=0)
+
+# 增加批次大小
+batch_size = 128  # 或者更大，如256
 
 # 訓練模型
-history = model.fit(X_train, y_train, epochs=epo, batch_size=32, validation_data=(X_test, y_test))
+history = model.fit(
+    X_train, y_train,
+    initial_epoch=total_epochs,
+    epochs=total_epochs + new_epochs,
+    batch_size=batch_size,
+    validation_split=0.2,
+    callbacks=[early_stopping, model_checkpoint, save_model_callback],
+    verbose=1
+)
 
-# 保存模型權重
-ep = epoc + epo
-model_weights_path = f'my_lottery_model-C_{ep}.weights.h5'
-model.save_weights(model_weights_path)
-print(f"Epoch: {epo} \n模型權重已保存至 {model_weights_path}")
+# 更新總訓練步數
+total_epochs += new_epochs
 
-# 獲取訓練過程中的損失值和準確率
-train_loss = history.history['loss']
-val_loss = history.history['val_loss']
-train_acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
+# 重命名最佳模型檢查點，加入總步數
+if os.path.exists(best_checkpoint_path):
+    new_best_checkpoint_path = os.path.join('best_checkpoint', f'best_lottery_model_{total_epochs}.weights.h5')
+    os.rename(best_checkpoint_path, new_best_checkpoint_path)
+    print(f"最佳模型已保存為: {new_best_checkpoint_path}")
 
-# 找出最低驗證集損失值和最高驗證集準確率對應的週期數
-min_val_loss_epoch = np.argmin(val_loss) + 1
-max_val_acc_epoch = np.argmax(val_acc) + 1
-
-# 列印結果
-print(f'最低驗證集損失值: {np.min(val_loss):.4f}, 出現在第 {min_val_loss_epoch} 個週期')
-print(f'最高驗證集準確率: {np.max(val_acc):.4f}, 出現在第 {max_val_acc_epoch} 個週期')
-
-# 保存自定義對象
-custom_objects_path = 'custom_objects-c.pkl'
-with open(custom_objects_path, 'wb') as file:
-    pickle.dump(get_custom_objects(), file)
-print(f"自定義對象已保存至 {custom_objects_path}")
+# 評估模型
+test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+print(f"測試集損失: {test_loss:.4f}")
+print(f"測試集準確率: {test_accuracy:.4f}")
 
 # 記錄結束時間
 end_time = time.time()
@@ -258,47 +333,41 @@ end_time = time.time()
 elapsed_time = end_time - start_time
 
 # 格式化時間輸出
-elapsed_formatted = time.strftime("%M:%S", time.gmtime(elapsed_time))
+elapsed_formatted = time.strftime("%H:%M:%S", time.gmtime(elapsed_time))
 
 print(f"代碼執行完成，總耗時: {elapsed_formatted}")
+print(f"當前累計訓練步數: {total_epochs}")
 
-#預測獎號
+# 預測獎號
 # 獲取最後一期開獎號碼
 last_numbers = drawings[-1]
 
 # 將最後一期開獎號碼轉換為向量形式
 def to_vector(numbers):
-    vector = np.zeros(5)
-    for i, num in enumerate(numbers):
+    vector = np.zeros(39)
+    for num in numbers:
         if 1 <= num <= 39:
-            vector[i] = 1
+            vector[num-1] = 1
     return vector
 
-# 將最後一期開獎號碼向量化，使其長度為5
+# 將最後一期開獎號碼向量化，使其長度為39
 last_vector = to_vector(last_numbers)
 print("上一期開獎號碼: ", dd[-1])
 
 def predict_next_numbers(model, features, drawings, window_size, top_n):
-    last_feature = features[-1]  # 最後一期的特徵
-    windowed_features = features[-window_size:]  # 視窗特徵
-    windowed_feature = np.mean(windowed_features, axis=0)  # 計算視窗特徵的平均值
-    last_vector = to_vector(drawings[-1])  # 最後一期開獎號碼的向量表示
-
-    # 確保所有特徵都是二維的，以便可以使用 np.concatenate 進行合併
-    last_feature = np.expand_dims(last_feature, axis=0)  # 將 last_feature 轉換為二維
-    windowed_feature = np.expand_dims(windowed_feature, axis=0)  # 將 windowed_feature 轉換為二維
-    last_vector = np.expand_dims(last_vector, axis=0)  # 將 last_vector 轉換為二維
+    # 構造預測輸入特徵向量
+    last_feature = features[-1]
+    windowed_features = features[-window_size:]
+    windowed_feature = np.mean(windowed_features, axis=0)
+    input_features = np.concatenate((last_feature, windowed_feature, last_vector))
     
-    # 將計算出的特徵數組合併為一個特徵向量
-    input_features = np.concatenate((last_feature, windowed_feature, last_vector, 
-                                      np.array(consecutive_features)[-1:], 
-                                      np.array(twin_combination_features)[-1:], 
-                                      np.array(triplet_combination_features)[-1:], 
-                                      np.array(dragon_features)[-1:]), axis=1)
-
-    # 進行預測
+    # 確保輸入特徵向量的形狀與模型輸入形狀一致
+    input_features = input_features[:103].reshape(1, -1)
+    
+    # 獲取預測概率
     predicted_probs = model.predict(input_features)[0]
     
+    # 對預測概率進行處理,確保和為1
     predicted_probs /= np.sum(predicted_probs)
     
     # 獲取預測概率從大到小排序的索引
